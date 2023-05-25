@@ -1,0 +1,1 @@
+["F1ower做梦梦见了Reed和Solomen，他们告诉了F1ower财富密码，但是F1ower记错了几个字节。。请将最终得到的完整flag(包含DASCTF{})进行MD5后再提交，即提交：\"DASCTF{%s}\" % md5(flag.encode()).hexdigest()","F1ower做梦梦见了Reed和Solomen，他们告诉了F1ower财富密码，但是F1ower记错了几个字节。"]
