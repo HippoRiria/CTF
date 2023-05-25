@@ -1,0 +1,69 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+//param_1原先被当成整数，然后就炸掉了
+char fuck(char *param_1, int param_2)
+
+{
+  char bVar1;
+  char uVar2;
+  char uVar3;
+  uVar3 = param_1[param_2];
+  bVar1 = param_1[1 + param_2];
+  if (9 < param_1[param_2] - 0x30) {
+    uVar3 = uVar3 - 0x37;
+  }
+  uVar2 = bVar1 - 0x37;
+  if (bVar1 - 0x30 < 10) {
+    uVar2 = bVar1;
+  }
+  return (uVar3 & 0xf) << 4 | uVar2 & 0xf;
+}
+
+int main() {
+  char shit[27] = "1A2F943C4D8C5B6EA3C9BCAD7E";
+  char ab[25] = {0};
+
+  char *flag;
+  flag = (char *)malloc(25 * sizeof(char));
+  flag += 2;
+  flag[-2] = 0xf;
+  flag[-1] = 0x87;
+  //ghidra误判了数组起始位置
+  flag[0] = 'b';
+  flag[1] = '\x14';
+  flag[2] = '\x01';
+  flag[3] = -0x3a;
+  flag[4] = -0x10;
+  flag[5] = '!';
+  flag[6] = '0';
+  flag[7] = '\x11';
+  flag[8] = 'P';
+  flag[9] = -0x30;
+  flag[10] = -0x7e;
+  flag[11] = '#';
+  flag[12] = -0x52;
+  flag[13] = '#';
+  flag[14] = -0x12;
+  flag[15] = -0x57;
+  flag[16] = -0x4c;
+  flag[17] = 'R';
+  flag[18] = 'x';
+  flag[19] = 'W';
+  flag[20] = 0xc;
+  flag[21] = 0x86;
+  flag[22] = 0x8b;
+  flag -= 2;
+
+  for (int i = 0; i < 0x19; ++i) {
+    //printf("%02x ", fuck(shit, i));
+    ab[i] = flag[i] ^ fuck(shit, i);
+    //printf("%02x ", ab[i]);
+    //printf("%02x ", (char)(ab[i] >> 2 & 0x3f));
+    //printf("%02x ", (char)(ab[i] << 6 & 0xc0));
+    //只有右移需要处理
+    ab[i] = ((char)(ab[i] >> 2 & 0x3f)) | ((char)(ab[i] << 6));
+    printf("%c", ab[i]);
+  }
+  return 0;
+}

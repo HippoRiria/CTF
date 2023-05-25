@@ -1,0 +1,11 @@
+flag=list("-------------------")			#这是学别人的，因为我们要的是19个元素的数组，所以List函数很不错喔
+print(len(flag))
+key1="ajygkFm.\x7f_~-SV{8mLn"
+flag[18]=chr(ord(key1[18])^19)
+for i in range(18):
+	v3=ord(key1[i])^i
+	if i%2==1:		#把18的判断条件抽出去后里面就只有一层条件了，简便很多。
+		flag[i]=chr(v3+i)
+	else:
+		flag[i+2]=chr(v3)
+print(''.join(flag))
