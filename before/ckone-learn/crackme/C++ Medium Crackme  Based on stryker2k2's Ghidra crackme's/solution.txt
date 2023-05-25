@@ -1,0 +1,280 @@
+==============================================================================================================================================================================
+										   PRELUDE
+==============================================================================================================================================================================
+
+Running the binary, we are presented with the following window:
+
+	 ______________________________________
+	|Enter Key:			       |
+	|				       |
+	|				       |
+	|______________________________________|
+
+Testing with random input provides this error:
+
+	 ______________________________________
+	|Enter Key: testing		       |
+	|Failed!			       |
+	|Enter Key:			       |
+	|______________________________________|
+
+Knowing what string is used for failing the key check allows us to find which function is actually doing the check
+through a reference to the string "Failed!".
+
+===============================================================================================================================================================================
+										   ANALYSIS
+===============================================================================================================================================================================
+
+Now we open the binary in Cutter then open the Strings view (Windows -> Strings) and search for the "Failed!"
+string pressing the x-key to find references to it then double clicking the code referencing it.
+
+For a more convenient view, we open the disassembly in graph view by right clicking and (Show in -> New Graph).
+We see the following graph which looks interesting:
+
+		 ____________________________________________________________________________________________________________________________
+		| 															     |
+		| 8d4db8                 lea ecx, [var_48h]										     |
+		| e84390ffff             call fcn.004110fa										     |
+		| c745fc00000000         mov dword [var_4h], 0										     |													
+		| 68fc3f4200             push str.Enter_Key: ; 0x423ffc									     |
+		| a1d0804200             mov eax, dword [class std::basic_ostream<char, struct std::char_traits<char>> std::cout] ; 0x4280d0 |
+		| 50                     push eax											     |
+		| e88492ffff             call fcn.00411352 								     		     |
+		| 83c408                 add esp, 8											     |
+		| 8d45b8                 lea eax, [var_48h]										     |
+		| 50                     push eax ; int32_t arg_ch									     |
+		| 8b0dcc804200           mov ecx, dword [class std::basic_istream<char, struct std::char_traits<char>> std::cin] ; 0x4280cc  |
+		| 51                     push ecx ; int32_t arg_8h									     |
+		| e80590ffff             call fcn.004110e6 									     	     |
+		| 83c408                 add esp, 8											     |
+		| 8d45df                 lea eax, [var_21h]										     |
+		| 50                     push eax											     |
+		| 8d4db8                 lea ecx, [var_48h]										     |
+		| e86490ffff             call fcn.00411154 										     |
+		| 50                     push eax											     |
+		| 6a00                   push 0 ; int32_t arg_ch									     |
+		| 685c050000             push 0x55c ; 1372 ; int32_t arg_8h								     |
+		| e83c92ffff             call security_check 										     |
+		| 83c410                 add esp, 0x10											     |
+		| 0fb6c8                 movzx ecx, al											     |
+		| 85c9                   test ecx, ecx											     |
+		| 740c                   je 0x418113											     |
+		|____________________________________________________________________________________________________________________________|
+										| |
+				    ____________________________________________| |____________________________________________
+				   |   										               |
+				   |    										       |
+	    _______________________|_____________________________________________			_______________________|____________________________________________
+	   |								         |		       |					       			    |
+	   | c785f0feffff0c404200   mov dword [var_110h], str.Success ; 0x42400c |		       | c785f0feffff18404200   mov dword [var_110h], str.Failed ; 0x424018 |					
+	   | eb0a                   jmp 0x41811d				 |		       |____________________________________________________________________|					
+	   |_____________________________________________________________________|
+
+Looking at the larger block, we see that the first two functions print the "Enter Key" text and ask the user for the key respectively. The third function is probably an 
+allocator of some sort as it makes use of the key that was given and spits it back out. We know that it spits it back out as the branching below the block relies on the
+fourth function's output (movzx ecx, al; test ecx, ecx; je 0x418113) which makes use of the third function's return value.
+
+I've taken the liberty to rename the fourth function as security_check to make things easier. Before diving into the security_check function, we have to keep in mind that
+we require the return value to be greater than 0 so that we don't branch to the failed section.
+
+Going inside security_check, we can see a loop which looks like:
+			
+			for (int var_1ch = 0; var_1ch < strlen(key); var_1ch++)
+
+This can be seen with the second block and the block at the bottom of the graph that loops back to the second block:
+
+			_________________________________________________
+               	       |						 |
+	       	       | 8b45e4                 mov eax, dword [var_1ch] |
+      	       	       | 83c001                 add eax, 1		 |
+      	       	       | 8945e4                 mov dword [var_1ch], eax |
+               	       |_________________________________________________|
+
+But inside of this loop lies another one which is similar to above and looks like:
+
+		       for (int var_34h = 0; var_34h < fcn.00411451(); var_34h++)
+
+Looking into fcn.00411451, it is quite dense so we resort to dynamic analysis which means its time to open x32dbg. Same routine, find the "Failed!" string. We do this by
+right clicking and (Search for -> All Modules). Quite a lot of strings so we start filtering and double click the code which references it. Set a breakpoint (f2-key) on 
+the security_check function we identified and run the binary. We input a random value and then execution stops at the breakpoint. We step into twice and press the g-key 
+for graph view. Set a breakpoint on the instruction below the call to fcn.00411451 to see what values of eax are returned by the function. Don't forget to remove the
+previous breakpoints as the focus now is to treat the function as a black box of sorts. 
+
+Now restart execution several times and try feeding different inputs and see what values eax will have. After a while, it will be seen that all the function does 
+is generate the number 8 so we can rewrite the for loop like this:
+
+		       for (int var_34h = 0; var_34h < 8; var_34h++)
+
+Looking further below in Cutter, we see a call to fcn.0041138e(). Once again, this function is pretty verbose but we can see it returns a 0 or 1, so we repeat the dynamic 
+analysis above and set a breakpoint on fcn.0041138e() to see what it does. Although we have to find inputs this time carefully as we are inside a deeper loop (acting on 
+each character). We first feed strings with the same characters ("AAAAA" etc.) and see how the function acts on each character. It can be seen that the function generates
+0s and 1s in the same order for each character.
+
+Eight 0s and 1s, sounds awfully a lot like binary encoding of an ascii character. Upon careful inspection, it can be seen that the function does generate the binary 
+encoding  of a respective character in reverse:
+				
+		       CHAR    BINARY      REVERSED
+		       A    -> 01000001 -> 10000010
+		       B    -> 01000010 -> 01000010
+		       C    -> 01000011 -> 11000010
+                       .	      .           .
+                       .	      .           .
+
+Going back into cutter we see that this value is then xored with 2 which will form a value of either 2 or 3 since 10 ^ 00 = 10 (2) and 10 ^ 01 = 11 (3). We see that this
+value is used in the function fcn.0041139d():
+
+		       fcn.0041139d(2_or_3, 0, var_34h, 0)
+
+We can dive into this function and happily enough, it's awfully small:
+
+		                        __________________________________________________________
+		 		       |							  |
+		 		       | 8b442408               mov eax, dword [arg_8h] ; 0 	  |
+      		 		       | 8b4c2410               mov ecx, dword [arg_10h] ; 0	  |
+      		 		       | 0bc8                   or ecx, eax			  |
+      		 		       | 8b4c240c               mov ecx, dword [arg_ch] ; var_34h |
+     		 		       | 7509                   jne 0x41ad49 		          |
+				       |__________________________________________________________|
+										| |
+				    ____________________________________________| |____________________
+				   |   								       |
+				   |    							       |
+	    _______________________|__________________________			_______________________|____________________________________________
+	   |						      |		       |					       			    |
+	   | 8b442404               mov eax, dword [arg_8h_2] |		       | 53                     push ebx				    |					
+	   | f7e1                   mul ecx		      |		       | f7e1                   mul ecx					    |					
+	   | c21000                 ret 0x10		      |		       | 8bd8                   mov ebx, eax				    |
+	   |__________________________________________________|		       | 8b442408               mov eax, dword [arg_8h_2]		    |
+									       | f7642414               mul dword [arg_10h]			    |
+									       | 03d8                   add ebx, eax				    |
+									       | 8b442408               mov eax, dword [arg_8h_2]		    |
+									       | f7e1                   mul ecx					    |
+									       | 03d3                   add edx, ebx				    |
+									       | 5b                     pop ebx					    |
+									       | c21000                 ret 0x10				    |
+									       |____________________________________________________________________|
+
+Notice that the jne instruction branches when the zero flag is not set. We can see that it is always cleared since the or ecx, eax instruction is always 0 so we never branch
+to the right so we have an opaque predicate with dead code which could be eliminated from our analysis. The graph can be remade like this which is functionally equivalent:
+
+		                        __________________________________________________________
+		 		       |							  |
+		 		       | 8b442408               mov eax, dword [arg_8h] ; 0 	  |
+      		 		       | 8b4c2410               mov ecx, dword [arg_10h] ; 0	  |
+      		 		       | 0bc8                   or ecx, eax			  |
+      		 		       | 8b4c240c               mov ecx, dword [arg_ch] ; var_34h |
+				       | 8b442404               mov eax, dword [arg_8h_2]	  |
+				       | f7e1                   mul ecx				  |
+				       | c21000                 ret 0x10			  |
+				       |__________________________________________________________|
+
+We're essentially multiplying var_34h with 2_or_3 and placing the result in edx:eax. Keep in mind the largest possible value is MAX_INDEX * 3 or 7 * 3 = 21 which happens to
+occupy less than 32 bits which means edx will always be 0 and eax will contain the result. We go back out of the function and see that the return values of edx and eax are
+placed in the variables var_10h and var_ch. var_ch will always be 0 and var_10h will be the sum of the returned values of fcn.0041139d().
+
+We finished analyzing the left hand side of the security_check function, now we go to the right hand side where security_check() returns. The branch to the right occurs when
+the for (int var_1ch = 0; var_1ch < strlen(key); var_1ch++) finishes. Notice the first compare block which is the target of the jae 0x4134c7 jump which takes place at the
+second block of the security_check function. It compares var_10h with 1372 and branches to 0 when they aren't equal, the subsequent block compares var_ch with 0 and branches
+to 0 when they aren't equal as well.
+
+Now remember what we require, the return value to be 1 so we should make sure (var_10h == 1372 && var_ch == 0) holds true. The second condition is easy to fulfill as
+mentioned before, var_ch will always be 0. Now we need to make sure that var_10h will generate 1372. In order to do this, we need to combine all the pieces of information
+we've learned through analysis of the function, the rough decompilation is as follows:
+
+			bool security_check(char * key) {
+				int total = 0;
+				
+				for (int var_1ch = 0; var_1ch < strlen(key); var_1ch++) {
+					char temp = key[var_1ch];
+
+					for (int var_34h = 0; var_34h < 8; var_34h++) {
+						total += ((temp & 1) ^ 2) * var_34h;
+						temp >>= 1;
+					}
+				}
+
+				if (total == 1372) return true;
+				else return false;
+			}
+
+Remember how the function that produces the reversed bits are reversed in the first place. If pondered upon carefully, the program requires the parsing of the least
+significant bit (lsb) to the most significant bit (msb). The security_check function above parses from lsb to msb differently, but gets the job done. Now we know the
+function, we can start keygenning to satisfy the security_check function.
+
+==============================================================================================================================================================================
+										 KEYGEN
+==============================================================================================================================================================================
+
+For keygenning we use z3 since it provides a convenient API for satisfying constraints/conditions. Keep in mind that we need to introduce randomness to allow the generation
+of different keys, a script that generates working keys is as follows:
+
+-------------------------------------------------------------------------------keygen.py--------------------------------------------------------------------------------------
+
+from z3 import *
+from random import randint
+
+def keygen(length):
+    c = BitVecs(' '.join(["c%d" %i for i in range(length)]), 16) 					# generate (length) bitvectors of 16 bits
+    form = lambda a1, a2 : (((a1 >> a2) & 1) ^ 2) * a2 		 					# a temporary function for easily doing the transformation
+    total = BitVecVal(0,16) 					 					# a bitvector of initial value of 0
+    constraint = [] 						 					# the list of constraints which will be added to the solver later on
+
+    solver = Solver()						 					# invoke the solver
+
+    constraint += [c[0] == ord('C')]				 					# ensure that the key conforms to the format of CTF{...}
+    constraint += [c[1] == ord('T')]				  
+    constraint += [c[2] == ord('F')]				 
+    constraint += [c[3] == ord('{')]				 
+    constraint += [c[length-1] == ord('}')]			 
+
+    for i in range(4,length-1):
+        constraint += [c[i] >= 33, c[i] <= randint(33,126)]	 					# ensure that the rest of the key conforms to the limitations of ascii
+   
+    for i in range(length):									 	# the loop is similar to the security_check function above
+        for idx in range(8):
+            total += form(c[i], idx)
+
+    constraint.append(total == 1372)				 					# ensure that the generated total is equivalent to the number 1372
+
+    solver.add(constraint)					 					# add the constraint to the solver
+
+    if solver.check() == sat:					 					# check if the given constraints are satisfiable
+        model = solver.model()					 
+        print(f"Found length: {length}")
+        print("Generated key: " + ''.join([chr(model[c[i]].as_long()) for i in range(length)]))		# joins the final characters into one string (key) and print to user
+    else:
+        return unsat						 					# constraints are unsolvable
+
+i = 20													# most keys work at 20
+while(keygen(i) == unsat):
+    print(f"Testing length: {i}")
+    i += 1
+
+-------------------------------------------------------------------------------keygen.py--------------------------------------------------------------------------------------
+
+One thing to remember when writing keygen scripts with z3 is to ensure that we do not mix BitVec calculations with conditional ones as they will make the script unusable 
+since computation will be slowed down tremendously.
+
+==============================================================================================================================================================================
+									      CONCLUSION
+==============================================================================================================================================================================
+
+Now let's generate a key and give it to the binary:
+
+	 ________________________________________
+	|> python3 keygen.py			 |
+	|Found length: 20			 |
+	|Generated password: CTF{<x>N@6>,\8n<B$4}|
+	|________________________________________|
+
+	 ____________________________________________________________________________
+	|Enter Key: CTF{<x>N@6>,\8n<B$4}			       		     |
+	|Success!								     |
+	|Congratulations you successfully logged in.. Now you can PM me the password!|
+	|____________________________________________________________________________|
+
+
+
+This binary was pretty fun and as mentioned in a comment, it is a perfect playground for z3. Whoever's reading this, I hope this proves useful.
+
+			-nanashi

@@ -1,0 +1,198 @@
+(Warning: Kind of ghetto solution. Copyright islaitala@gmail.com)
+
+First I opened IDA and searched for strings. Then I found the enter password string and searched for XREFS and
+jumped to the only XREF there was. 
+
+After bit more examining I noticed the following function call:
+	---------------------------------------------------------------------
+	mov     rcx, cs:?cin@std@@3V?$basic_istream@DU?$char_traits@D@std@@@1@A ; std::basic_istream<char,std::char_traits<char>> std::cin
+	lea     r8, [rbp+40h+var_20]
+	call    sub_140001B70
+	---------------------------------------------------------------------
+
+When quickly looking over sub_140001B70, I notice that it seems like default library code. So at this
+point it would be fair to assume that the user input is stored in memory address rbp+40h+var_20 (I will name it to rbp+40h+input now).
+
+Then after the function call; pointer to the input is copied to RAX and RDX is set with value 0FFFFFFFFFFFFFFFFh.
+After that comes the following code snippet:
+
+	---------------------------------------------------------------------
+	loc_140001516:
+	inc     rdx
+	cmp     [rax+rdx], bl
+	jnz     short loc_140001516
+	cmp     rdx, 13h
+	jz      short loc_140001530
+	---------------------------------------------------------------------
+
+which basically just checks if the input string's length is equivalent to 0x13 (19 in decimal). So from here we can
+assume that the key's size must be 0x13.
+
+Next up comes loop initialization code and a while loop.
+	---------------------------------------------------------------------
+	loc_140001530:
+	mov     r8d, ebx
+	lea     r9, [rbp+40h+input]
+	mov     r10, rdi
+	nop     word ptr [rax+rax+00h]
+	---------------------------------------------------------------------
+
+r8d is set to ebx (which has been set to 0 earlier, scroll up to see!)
+Counter value will be stored in r8d register.
+Pointer to the input is copied to r9 and value of rdi is copied to r10.
+What is in rdi? By scrolling up we can see these lines:
+
+	---------------------------------------------------------------------
+	.text:00000001400014DE
+		call    j_??2@YAPEAX_K@Z ; operator new(unsigned __int64)
+		lea     rdx, aEnterPassword ; "enter password: "
+		mov     rdi, rax
+	---------------------------------------------------------------------
+
+Luckily ida has commented the new() function call here so we don't need to dig deeper there.
+So we are basically allocating some memory with new keyword, and saving pointer to the allocated memory into the rdi register.
+
+Then comes this weird loop:
+	---------------------------------------------------------------------
+	.text:0000000140001540
+		movsx   ecx, byte ptr [r9]
+		lea     r9, [r9+1]
+		mov     eax, ecx
+		lea     r10, [r10+4]
+		not     eax
+		inc     r8d
+		and     eax, 1
+		lea     eax, ds:0FFFFFFFFFFFFFFFFh[rax*2]
+		add     eax, ecx
+		mov     [r10-4], eax
+		movsxd  rax, r8d
+		cmp     rax, rdx
+	---------------------------------------------------------------------
+
+I reversed it (sort of pseudo C):
+	---------------------------------------------------------------------
+	int counter = 0; // r8d
+
+	char inputStrPtr; // rbp+40h+input
+	int64_t memPtr = malloc(....); // r10
+	int counter2 = 0; // ebx
+
+	// encrypt
+	while (counter < strlen)
+	{
+		char letter = (char)inputStrPtr; // ecx
+		inputStrPtr++;
+
+		char letter2 = letter; // eax
+
+		memPtr += 4;
+
+		letter2 = ~letter2;//取反
+
+		counter++;
+
+		letter2 &= 1;//该位置置零  1&0=0
+
+		letter2 = letter2*2-1;
+
+		letter2 += letter;
+
+		// initialize new arr with encrypted input key
+		*(char*)(memPtr-4) = letter2;
+	}
+	---------------------------------------------------------------------
+
+We can pretty quickly see that this loop just takes our input string letter by letter, and
+does some magic on the letter taken and then puts the edited letter into the array we allocated earlier.
+
+Then because I had zero interest to mathematically reveal the secrets of this loop, I just booted up x64dbg and
+examined what happens to the string after the loop has ran. And looked if there was any specific pattern.
+I inputted something like abcdefgh00000000000 and looked at the characters in hex. I noticed
+that if an ascii value was even -> it would be increased by 1 and if it was odd -> it would be decreased by 1.
+Boom! We now know how the encrypt function works.
+
+Next up is this code:
+---------------------------------------------------------------------
+.text:000000014000156B
+	lea     rax, [rsp+140h+var_120]
+	sub     rdi, rax
+	lea     rcx, [rsp+140h+var_120]
+	loc_140001578:
+	mov     eax, [rdi+rcx]
+	cmp     [rcx], eax
+	jnz     short loc_1400015AF
+---------------------------------------------------------------------
+
+So we load ptr rsp+140h+var_120 to rax. Then we substract it from rdi (storing result in rdi)
+and loading ptr rsp+140h+var_120 to rcx. Then value at rdi+rcx is copied to eax and we have a comparison.
+
+Basically eax is set with value rdi - rsp+140h+var_120 + rsp+140h+var_120 so rdi (which was the pointer to the allocated memory).
+
+We compare value in memory address rsp+140h+var_120 to with value at rdi so would be fair to say that rsp+140h+var_120 is the
+key we are looking for or at least part of it. (also execution will flow to print the "Incorrect" message if the values mismatch).
+
+If values are equal, the following block of code is executed:
+---------------------------------------------------------------------
+.text:000000014000157F
+inc     ebx
+add     rcx, 4
+cmp     ebx, 13h
+jb      short loc_140001578
+---------------------------------------------------------------------
+
+So now ebx is getting incremented, (it is counter) as well as rcx. Then there is comparison with the value 0x13
+again. So we can clearly see that the key is stored in memory location rsp+140h+var_120, and since 0x13 is the key's length,
+the key has 0x13 characters too. Also should be noted that we are incrementing rcx by 4 and comparing 4 byte integers
+but because we are talking about characters here (which length is 1 byte) there must be some zeroed bytes in the 4 byte integer
+(as we will see in just a second).
+
+So because we know where the key is stored, we can set breakpoint there and just read the contents.
+So here is encrypted version of the key:
+---------------------------------------------------------------------
+	34 00 00 00 74 00 00 00 71 00 00 00 32 00 00 00  4...t...q...2...  
+	73 00 00 00 49 00 00 00 30 00 00 00 65 00 00 00  s...I...0...e...  
+	65 00 00 00 32 00 00 00 6F 00 00 00 51 00 00 00  e...2...o...Q...  
+	60 00 00 00 34 00 00 00 34 00 00 00 76 00 00 00  `...4...4...v...  
+	31 00 00 00 73 00 00 00 65 00 00 00 65 00 00 00  1...s...e
+---------------------------------------------------------------------
+
+The key could change at runtime but if you reverse more towards to the beginning of the function you will see how
+the key is actually created and you will know that it is static and wont change.
+
+So now we just need to decrypt the encrypted key.
+
+I wrote a python script to do just that (extremely ghetto):
+---------------------------------------------------------------------
+	key_obfuscated = "34 00 00 00 74 00 00 00 71 00 00 00 32 00 00 00 73 00 00 00 49 00 00 00 30 00 00 00 65 00 00 00 65 00 00 00 32 00 00 00 6F 00 00 00 51 00 00 00 60 00 00 00 34 00 00 00 34 00 00 00 76 00 00 00 31 00 00 00 73 00 00 00 65"
+
+	num = ""
+
+	key_obfuscated=key_obfuscated.replace("00", "")
+	final = ""
+
+	key_obfuscated += " " # so the algorithm does not leave out the last letter of the key
+	for i in range(len(key_obfuscated)):
+		char = key_obfuscated[i]
+		if (char == " "):
+			if (len(num)>0):
+				original = int(num, 16)
+				numAsInteger = int(num, 16)
+			
+				if (numAsInteger % 2 == 0):
+					numAsInteger += 1
+				else:
+					numAsInteger -= 1
+
+				final += chr(numAsInteger)
+			num = "";
+			continue
+		else:
+			num += char;
+			
+	print(final)
+---------------------------------------------------------------------
+
+And it spits out the proper key which is 5up3rH1dd3nPa55w0rd.
+
+Actually the program seems like it crashes if you input the correct key but you can verify it actually working with
+a debugger.

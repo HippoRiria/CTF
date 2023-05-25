@@ -1,0 +1,151 @@
+
+After we input the key to the program the first thing it does is to check it's lenght
+the following code snippet showcases this lenght check:
+
+________________________
+cmp     [ebp+var_18], 6
+mov     ecx, [ebp+var_14]
+jnb     short loc_6F219C
+________________________
+
+the program here checks if the length of the key is greater than or equal to 6
+if the key's length is less than 6 the program will quit silently
+after providing a key with a good lenght the program will start checking the key's validity
+
+the algorithm used to process the key's vailidity is devided into two parts.
+
+(i will use the symbol "key[x]" to represent the ascii value for each key character at index "x",
+the indexing starts with the number 0 as the first index of the first character in the key)
+
+*the first part:
+
+the following code snippet showcases the algorithm used in the first part:
+
+________________________
+mov     ebx, [ebp+var_28]
+lea     eax, [ebp+var_28]
+cmp     ecx, 10h
+cmovnb  eax, ebx
+movsx   edi, byte ptr [eax+0Dh]   ;  edi = key[13]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   eax, byte ptr [eax+0Fh]   ;  eax = key[15] 
+sub     edi, eax                  ;  edi = edi - eax = key[13]-key[15]
+cmp     ecx, 10h
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   esi, byte ptr [eax+8]     ;  esi = key[8]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   eax, byte ptr [eax+0Ch]   ;  eax = key[12]
+sub     esi, eax                  ;  esi = esi - eax = key[8]-key[12] 
+cmp     ecx, 10h
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   edx, byte ptr [eax+6]     ;  edx = key[6]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   eax, byte ptr [eax+3]     ;  eax = key[3]
+sub     edx, eax                  ;  edx = edx - eax = key[6]-key[3]
+cmp     ecx, 10h
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+cmp     [ebp+var_14], 10h
+movsx   ecx, byte ptr [eax+3]     ;  ecx = key[3]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+imul    edi, edi                  ;  edi = edi*edi =   (key[13]-key[15])*(key[13]-key[15])
+movsx   eax, byte ptr [eax+0Ch]   ;  eax = key[12]
+sub     eax, ecx                  ;  eax = eax - ecx =  key[12]-key[3]
+imul    eax, edx                  ;  eax = eax*edx =   (key[12]-key[3])*(key[6]-key[3])
+imul    eax, esi                  ;  eax = eax*esi = (key[12]-key[3])*(key[6]-key[3])*(key[8]-key[12])
+lea     eax, [edi+eax*4]          ;  eax = edi+eax*4 = (key[13]-key[15])*(key[13]-key[15]) + (key[12]-key[3])*(key[6]-key[3])*(key[8]-key[12])*4
+cmp     eax, 11B8h                ;compares eax with 0x11B8
+jnz     loc_6F22D6
+________________________
+
+we can see in the first part of the key checking algorithm that for the key to pass it needs to meet the following condition:
+
+
+(key[13]-key[15])*(key[13]-key[15]) + (key[12]-key[3])*(key[6]-key[3])*(key[8]-key[12])*4 == 0x11B8
+
+
+*second part:
+
+(the second part of the checking algorithm will be processed only if the first one is passed successfully)
+
+code snippet for the second algorithm:
+
+
+________________________
+mov     edx, offset aGoodForYouYouR ; "Good for you, you're halfway there.! \n"
+call    sub_6F2620
+cmp     [ebp+var_14], 10h
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   ecx, byte ptr [eax+2]   ;ecx = key[2]
+lea     eax, [ebp+var_28]  
+add     ecx, 5                  ;ecx = ecx + 5 = key[2] + 5
+cmp     [ebp+var_14], 10h
+cmovnb  eax, ebx
+movsx   edi, byte ptr [eax+0Ch] ;edi = key[12]
+lea     eax, [ebp+var_28]
+sub     edi, ecx                ;edi = edi - ecx = key[12] - key[2] - 5
+mov     ecx, [ebp+var_14]
+cmp     ecx, 10h
+cmovnb  eax, ebx
+movsx   esi, byte ptr [eax+1]   ; esi = key[1]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   eax, byte ptr [eax+2]   ; eax = key[2]
+sub     esi, eax                ; esi = esi - eax = key[1] - key[2]
+cmp     ecx, 10h
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+movsx   edx, byte ptr [eax+1]   ;edx = key[1]
+lea     eax, [ebp+var_28]
+sub     edx, 4                  ;edx = edx - 4 = key[1] -4
+cmp     ecx, 10h
+cmovnb  eax, ebx
+movsx   eax, byte ptr [eax+3]   ;eax = key[3]
+sub     edx, eax                ;edx = edx - eax = key[1] -4 - key[3]
+cmp     ecx, 10h
+lea     eax, [ebp+var_28]       
+cmovnb  eax, ebx
+cmp     [ebp+var_14], 10h
+movsx   ecx, byte ptr [eax+0Eh] ;ecx = key[14]
+lea     eax, [ebp+var_28]
+cmovnb  eax, ebx
+imul    esi, esi                ;esi = esi*esi = (key[1] - key[2]) * (key[1] - key[2])
+movsx   eax, byte ptr [eax+0Dh] ;eax = key[13]
+sub     eax, ecx                ;eax = eax - ecx = key[13] - key[14]
+add     eax, 2                  ;eax  = eax + 2 = key[13] - key[14] + 2
+imul    eax, edx                ;eax = eax * edx = (key[13] - key[14] + 2)* (key[1] -4 - key[3]) 
+mov     edx, offset aYesYouProfessi ; "Yes, you professional!"
+imul    eax, edi                ;eax = eax*edi = (key[13] - key[14] + 2)* (key[1] -4 - key[3])*(key[12] - key[2] - 5)
+imul    eax, 88h                ;eax = eax * 0x88 = (key[13] - key[14] + 2)* (key[1] -4 - key[3])*(key[12] - key[2] - 5)*0x88
+add     eax, esi                ;eax = eax + esi = (key[13] - key[14] + 2)* (key[1] -4 - key[3])*(key[12] - key[2] - 5)*0x88 + (key[1] - key[2]) * (key[1] - key[2])
+cmp     eax, 0FFFF6F80h         ;compares eax with 0xFFFF6F80
+jz      short loc_6F22C6
+
+________________________
+
+
+we can see in the second part of the key checking algorithm that for the key to pass it needs to meet the following condition:
+
+
+(key[13] - key[14] + 2)* (key[1] -4 - key[3])*(key[12] - key[2] - 5)*0x88 + (key[1] - key[2]) * (key[1] - key[2]) == 0xFFFF6F80 
+( decimal signed value for 0xFFFF6F80 is -36992 )
+
+
+
+there are a few things that we can notice from these two algorithms:
+- characters at index 0,4,5,7,9,10,11  are not processed which means they can have any values
+- the first part useses only characters at index 3,6,8,12,13,15
+- the second part uses only characters at index 1,2,3,12,13,14
+
+this information will help us in creating the keygen
+
+i provided a keygen.py with comments in the code to explain how it works
+
+
